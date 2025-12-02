@@ -1,0 +1,972 @@
+<template>
+  <div class="app">
+    <header class="app-header">
+      <h1><i class="fas fa-book"></i> Markdown 笔记管理</h1>
+      <div class="header-actions">
+        <button class="btn btn-primary" @click="createNote">
+          <i class="fas fa-plus"></i> 新建笔记
+        </button>
+      </div>
+    </header>
+
+    <div class="app-content">
+      <aside class="sidebar">
+        <div class="sidebar-section">
+          <h3><i class="fas fa-folder"></i> 分类</h3>
+          <div class="category-list">
+            <div 
+              v-for="category in categories" 
+              :key="category.id"
+              :class="['category-item', { active: currentCategory === category.id }]"
+              @click="selectCategory(category.id)"
+            >
+              <i :class="['fas', category.icon]"></i>
+              <span>{{ category.name }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-section">
+          <h3><i class="fas fa-tags"></i> 标签</h3>
+          <div class="tag-list">
+            <div 
+              v-for="tag in allTags" 
+              :key="tag"
+              :class="['tag-item', { active: currentTag === tag }]"
+              @click="selectTag(tag)"
+            >
+              <i class="fas fa-tag"></i>
+              <span>{{ tag }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-section">
+          <h3><i class="fas fa-trash"></i> 回收站</h3>
+          <div 
+            :class="['trash-item', { active: showTrash }]"
+            @click="toggleTrash"
+          >
+            <i class="fas fa-trash"></i>
+            <span>回收站 ({{ trashedNotes.length }})</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <div class="notes-header">
+          <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input 
+              type="text" 
+              placeholder="搜索笔记..." 
+              v-model="searchQuery"
+              @input="filterNotes"
+            >
+          </div>
+          <div class="sort-options">
+            <select v-model="sortBy" @change="sortNotes">
+              <option value="date-desc">按时间倒序</option>
+              <option value="date-asc">按时间正序</option>
+              <option value="title-asc">按标题升序</option>
+              <option value="title-desc">按标题降序</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="notes-list">
+          <div 
+            v-for="note in filteredNotes" 
+            :key="note.id"
+            class="note-card"
+            @click="openNote(note)"
+          >
+            <div class="note-header">
+              <h4 class="note-title">{{ note.title }}</h4>
+              <div class="note-actions">
+                <button 
+                  class="btn-icon" 
+                  @click.stop="deleteNote(note)"
+                  title="删除笔记"
+                  v-if="!showTrash"
+                >
+                  <i class="fas fa-trash"></i>
+                </button>
+                <button 
+                  class="btn-icon" 
+                  @click.stop="restoreNote(note)"
+                  title="恢复笔记"
+                  v-if="showTrash"
+                >
+                  <i class="fas fa-undo"></i>
+                </button>
+                <button 
+                  class="btn-icon btn-danger" 
+                  @click.stop="deleteNote(note)"
+                  title="删除到回收站"
+                  v-if="!showTrash"
+                >
+                  <i class="fas fa-trash"></i>
+                </button>
+                <button 
+                  class="btn-icon btn-danger" 
+                  @click.stop="deleteNotePermanently(note)"
+                  title="彻底删除"
+                  v-if="showTrash"
+                >
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </div>
+            <p class="note-preview">{{ note.preview }}</p>
+            <div class="note-footer">
+              <span class="note-date">{{ formatDate(note.updatedAt) }}</span>
+              <div class="note-tags">
+                <span v-for="tag in note.tags" :key="tag" class="tag">{{ tag }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <aside class="editor-panel" v-if="currentNote">
+        <div class="editor-header">
+          <h2>笔记编辑器</h2>
+          <div class="editor-actions">
+            <button 
+              class="btn-icon" 
+              @click="toggleViewMode"
+              :title="viewMode === 'split' ? '切换到纯编辑模式' : '切换到分栏模式'"
+            >
+              <i :class="['fas', viewMode === 'split' ? 'fa-columns' : 'fa-expand']"></i>
+            </button>
+            <button 
+              class="btn-icon" 
+              @click="saveNote"
+              title="保存笔记"
+            >
+              <i class="fas fa-save"></i>
+            </button>
+            <button 
+              class="btn-icon btn-danger" 
+              @click="closeEditor"
+              title="关闭编辑器"
+            >
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="editor-content">
+          <div class="editor-toolbar">
+            <button class="toolbar-btn" @click="insertFormat('**', '**', '加粗')" title="加粗">
+              <i class="fas fa-bold"></i>
+            </button>
+            <button class="toolbar-btn" @click="insertFormat('*', '*', '斜体')" title="斜体">
+              <i class="fas fa-italic"></i>
+            </button>
+            <button class="toolbar-btn" @click="insertFormat('`', '`', '代码')" title="行内代码">
+              <i class="fas fa-code"></i>
+            </button>
+            <button class="toolbar-btn" @click="insertFormat('```\n', '\n```', '代码块')" title="代码块">
+              <i class="fas fa-terminal"></i>
+            </button>
+            <button class="toolbar-btn" @click="insertFormat('[', '](链接)', '链接文本')" title="链接">
+              <i class="fas fa-link"></i>
+            </button>
+            <button class="toolbar-btn" @click="insertFormat('![', '](图片链接)', '图片描述')" title="图片">
+              <i class="fas fa-image"></i>
+            </button>
+            <button class="toolbar-btn" @click="insertFormat('# ', '', '标题')" title="标题">
+              <i class="fas fa-heading"></i>
+            </button>
+            <button class="toolbar-btn" @click="insertFormat('- ', '', '列表项')" title="列表">
+              <i class="fas fa-list"></i>
+            </button>
+            <button class="toolbar-btn" @click="insertFormat('> ', '', '引用')" title="引用">
+              <i class="fas fa-quote-right"></i>
+            </button>
+          </div>
+
+          <div :class="['editor-container', viewMode]">
+            <div class="editor-pane">
+              <h3>笔记标题</h3>
+              <input 
+                type="text" 
+                v-model="currentNote.title"
+                class="note-title-input"
+                placeholder="请输入笔记标题..."
+              />
+              <h3>编辑内容</h3>
+              <textarea 
+                v-model="currentNote.content"
+                class="markdown-editor"
+                @input="updatePreview"
+                placeholder="开始编写您的笔记..."
+              ></textarea>
+            </div>
+            <div class="preview-pane" v-if="viewMode === 'split' || viewMode === 'preview'">
+              <h3>预览</h3>
+              <div class="markdown-preview" v-html="previewContent"></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</template>
+
+<script>
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { marked } from 'marked'
+import hljs from 'highlight.js'
+
+export default {
+  name: 'App',
+  setup() {
+    // 配置marked和highlight.js
+    marked.setOptions({
+      highlight: function(code, lang) {
+        const language = hljs.getLanguage(lang) ? lang : 'plaintext'
+        return hljs.highlight(code, { language }).value
+      }
+    })
+
+    // 数据
+    const notes = ref([])
+    const categories = ref([
+      { id: 'all', name: '全部笔记', icon: 'fa-inbox' },
+      { id: 'work', name: '工作', icon: 'fa-briefcase' },
+      { id: 'study', name: '学习', icon: 'fa-graduation-cap' },
+      { id: 'personal', name: '个人', icon: 'fa-user' }
+    ])
+    
+    const currentCategory = ref('all')
+    const currentTag = ref(null)
+    const showTrash = ref(false)
+    const searchQuery = ref('')
+    const sortBy = ref('date-desc')
+    const currentNote = ref(null)
+    const viewMode = ref('split') // split, edit, preview
+    const previewContent = ref('')
+
+    // 计算属性
+    const trashedNotes = computed(() => {
+      return notes.value.filter(note => note.trashed)
+    })
+
+    const allTags = computed(() => {
+      const tags = new Set()
+      notes.value.forEach(note => {
+        note.tags.forEach(tag => tags.add(tag))
+      })
+      return Array.from(tags)
+    })
+
+    const filteredNotes = computed(() => {
+      let result = notes.value
+      
+      // 回收站筛选
+      if (showTrash.value) {
+        result = result.filter(note => note.trashed)
+      } else {
+        result = result.filter(note => !note.trashed)
+      }
+      
+      // 分类筛选
+      if (currentCategory.value !== 'all') {
+        result = result.filter(note => note.category === currentCategory.value)
+      }
+      
+      // 标签筛选
+      if (currentTag.value) {
+        result = result.filter(note => note.tags.includes(currentTag.value))
+      }
+      
+      // 搜索筛选
+      if (searchQuery.value) {
+        const query = searchQuery.value.toLowerCase()
+        result = result.filter(note => 
+          note.title.toLowerCase().includes(query) ||
+          note.content.toLowerCase().includes(query)
+        )
+      }
+      
+      return result
+    })
+
+    // 方法
+    const loadNotes = () => {
+      const saved = localStorage.getItem('markdown-notes')
+      if (saved) {
+        notes.value = JSON.parse(saved)
+      } else {
+        // 初始化示例数据
+        notes.value = [
+          {
+            id: Date.now(),
+            title: '欢迎使用Markdown笔记管理工具',
+            content: '# 欢迎使用\n\n这是一个功能强大的Markdown笔记管理工具，支持：\n\n- 实时预览\n- 语法高亮\n- 分类管理\n- 标签系统\n- 回收站功能\n\n## 开始使用\n\n点击"新建笔记"按钮开始创建您的第一条笔记！',
+            preview: '这是一个功能强大的Markdown笔记管理工具，支持：实时预览、语法高亮、分类管理、标签系统、回收站功能...',
+            category: 'all',
+            tags: ['欢迎', '指南'],
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            trashed: false
+          }
+        ]
+        saveNotes()
+      }
+    }
+
+    const saveNotes = () => {
+      localStorage.setItem('markdown-notes', JSON.stringify(notes.value))
+    }
+
+    const createNote = () => {
+      const newNote = {
+        id: Date.now(),
+        title: '新建笔记',
+        content: '',
+        preview: '',
+        category: 'all',
+        tags: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        trashed: false
+      }
+      notes.value.unshift(newNote)
+      saveNotes()
+      openNote(newNote)
+    }
+
+    const openNote = (note) => {
+      currentNote.value = { ...note }
+      updatePreview()
+    }
+
+    const saveNote = () => {
+      if (!currentNote.value) return
+
+      const index = notes.value.findIndex(note => note.id === currentNote.value.id)
+      if (index !== -1) {
+        notes.value[index] = {
+          ...currentNote.value,
+          updatedAt: Date.now(),
+          preview: currentNote.value.content.substring(0, 100) + (currentNote.value.content.length > 100 ? '...' : '')
+        }
+        saveNotes()
+      }
+    }
+
+    const deleteNote = (note) => {
+      note.trashed = true
+      note.updatedAt = Date.now()
+      saveNotes()
+    }
+
+    const restoreNote = (note) => {
+      note.trashed = false
+      note.updatedAt = Date.now()
+      saveNotes()
+    }
+
+    const deleteNotePermanently = (note) => {
+      const index = notes.value.findIndex(n => n.id === note.id)
+      if (index !== -1) {
+        notes.value.splice(index, 1)
+        saveNotes()
+      }
+    }
+
+    const formatDate = (timestamp) => {
+      const date = new Date(timestamp)
+      const now = new Date()
+      const diff = now - date
+      
+      const seconds = Math.floor(diff / 1000)
+      const minutes = Math.floor(seconds / 60)
+      const hours = Math.floor(minutes / 60)
+      const days = Math.floor(hours / 24)
+      
+      if (days > 0) {
+        return `${days}天前`
+      } else if (hours > 0) {
+        return `${hours}小时前`
+      } else if (minutes > 0) {
+        return `${minutes}分钟前`
+      } else {
+        return '刚刚'
+      }
+    }
+
+    const selectCategory = (categoryId) => {
+      currentCategory.value = categoryId
+      currentTag.value = null
+    }
+
+    const selectTag = (tag) => {
+      currentTag.value = currentTag.value === tag ? null : tag
+    }
+
+    const toggleTrash = () => {
+      showTrash.value = !showTrash.value
+      currentCategory.value = 'all'
+      currentTag.value = null
+    }
+
+    const filterNotes = () => {
+      // 筛选逻辑在computed中处理
+    }
+
+    const sortNotes = () => {
+      const sorted = [...filteredNotes.value]
+      
+      switch (sortBy.value) {
+        case 'date-desc':
+          sorted.sort((a, b) => b.updatedAt - a.updatedAt)
+          break
+        case 'date-asc':
+          sorted.sort((a, b) => a.updatedAt - b.updatedAt)
+          break
+        case 'title-asc':
+          sorted.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'))
+          break
+        case 'title-desc':
+          sorted.sort((a, b) => b.title.localeCompare(a.title, 'zh-CN'))
+          break
+      }
+      
+      notes.value = sorted
+    }
+
+    const toggleViewMode = () => {
+      const modes = ['split', 'edit', 'preview']
+      const currentIndex = modes.indexOf(viewMode.value)
+      viewMode.value = modes[(currentIndex + 1) % modes.length]
+    }
+
+    const updatePreview = () => {
+      if (currentNote.value) {
+        previewContent.value = marked(currentNote.value.content)
+      }
+    }
+
+    const insertFormat = (prefix, suffix, placeholder = '') => {
+      if (!currentNote.value) return
+
+      const textarea = document.querySelector('.markdown-editor')
+      const start = textarea.selectionStart
+      const end = textarea.selectionEnd
+      const selectedText = currentNote.value.content.substring(start, end)
+      
+      const newText = prefix + (selectedText || placeholder) + suffix
+      currentNote.value.content = 
+        currentNote.value.content.substring(0, start) + 
+        newText + 
+        currentNote.value.content.substring(end)
+      
+      // 将光标定位到合适位置
+      setTimeout(() => {
+        textarea.focus()
+        textarea.selectionStart = textarea.selectionEnd = start + prefix.length + (selectedText ? selectedText.length : placeholder.length)
+      }, 0)
+      
+      updatePreview()
+    }
+
+    const closeEditor = () => {
+      currentNote.value = null
+    }
+
+    // 生命周期
+    onMounted(() => {
+      loadNotes()
+    })
+
+    return {
+      notes,
+      categories,
+      currentCategory,
+      currentTag,
+      showTrash,
+      searchQuery,
+      sortBy,
+      currentNote,
+      viewMode,
+      previewContent,
+      trashedNotes,
+      allTags,
+      filteredNotes,
+      createNote,
+      openNote,
+      saveNote,
+      deleteNote,
+      restoreNote,
+      deleteNotePermanently,
+      selectCategory,
+      selectTag,
+      toggleTrash,
+      filterNotes,
+      sortNotes,
+      toggleViewMode,
+      updatePreview,
+      insertFormat,
+      closeEditor,
+      formatDate
+    }
+  }
+}
+</script>
+
+<style scoped>
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.app-header h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.app-header h1 i {
+  margin-right: 10px;
+}
+
+.header-actions .btn {
+  margin-left: 10px;
+}
+
+.app-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 280px;
+  background-color: white;
+  border-right: 1px solid #eee;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.sidebar-section {
+  margin-bottom: 30px;
+}
+
+.sidebar-section h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 15px;
+  color: #333;
+}
+
+.sidebar-section h3 i {
+  margin-right: 8px;
+  color: #667eea;
+}
+
+.category-list,
+.tag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.category-item,
+.tag-item,
+.trash-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+}
+
+.category-item:hover,
+.tag-item:hover,
+.trash-item:hover {
+  background-color: #f5f7fa;
+}
+
+.category-item.active,
+.tag-item.active,
+.trash-item.active {
+  background-color: #667eea;
+  color: white;
+}
+
+.category-item i,
+.tag-item i,
+.trash-item i {
+  margin-right: 10px;
+  width: 16px;
+  text-align: center;
+}
+
+.main-content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.notes-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  gap: 15px;
+}
+
+.search-box {
+  flex: 1;
+  position: relative;
+}
+
+.search-box i {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #999;
+}
+
+.search-box input {
+  width: 100%;
+  padding: 10px 12px 10px 40px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.sort-options select {
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.notes-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.note-card {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-left: 4px solid #667eea;
+}
+
+.note-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.note-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.note-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.note-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  padding: 5px;
+  cursor: pointer;
+  color: #999;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.btn-icon:hover {
+  background-color: #f5f7fa;
+  color: #667eea;
+}
+
+.btn-icon.btn-danger:hover {
+  color: #f56c6c;
+}
+
+.note-preview {
+  font-size: 14px;
+  color: #666;
+  line-height: 1.5;
+  margin-bottom: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.note-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #999;
+}
+
+.note-tags {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.tag {
+  background-color: #f5f7fa;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  color: #666;
+}
+
+.editor-panel {
+  width: 600px;
+  background-color: white;
+  border-left: 1px solid #eee;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.editor-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.editor-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.editor-toolbar {
+  display: flex;
+  gap: 5px;
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+  background-color: #fafafa;
+  flex-wrap: wrap;
+}
+
+.toolbar-btn {
+  background: none;
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  color: #666;
+}
+
+.toolbar-btn:hover {
+  background-color: #f5f7fa;
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.editor-container {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.editor-container.split {
+  flex-direction: row;
+}
+
+.editor-container.edit .preview-pane,
+.editor-container.preview .editor-pane {
+  display: none;
+}
+
+.editor-pane,
+.preview-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.editor-pane h3,
+.preview-pane h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 15px;
+  color: #333;
+}
+
+.note-title-input {
+      width: 100%;
+      padding: 12px 15px;
+      border: 1px solid #eee;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 15px;
+      outline: none;
+    }
+
+    .note-title-input:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+    }
+
+    .markdown-editor {
+      flex: 1;
+      width: 100%;
+      border: 1px solid #eee;
+      border-radius: 6px;
+      padding: 15px;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      resize: none;
+      outline: none;
+    }
+
+.markdown-editor:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+}
+
+.markdown-preview {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  background-color: #fafafa;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3 {
+  margin-top: 20px;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.markdown-preview p {
+  margin-bottom: 15px;
+  line-height: 1.6;
+}
+
+.markdown-preview code {
+  background-color: #f5f7fa;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+}
+
+.markdown-preview pre {
+  background-color: #f5f7fa;
+  padding: 15px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin-bottom: 15px;
+}
+
+.markdown-preview blockquote {
+  border-left: 4px solid #667eea;
+  padding-left: 15px;
+  margin-left: 0;
+  color: #666;
+  font-style: italic;
+}
+
+/* 响应式设计 */
+@media (max-width: 1200px) {
+  .editor-panel {
+    width: 500px;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-content {
+    flex-direction: column;
+  }
+  
+  .sidebar {
+    width: 100%;
+    height: auto;
+    max-height: 200px;
+    border-right: none;
+    border-bottom: 1px solid #eee;
+  }
+  
+  .main-content {
+    padding: 10px;
+  }
+  
+  .notes-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .notes-list {
+    grid-template-columns: 1fr;
+  }
+  
+  .editor-panel {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #eee;
+  }
+  
+  .editor-container.split {
+    flex-direction: column;
+  }
+}
+</style>
