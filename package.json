@@ -1,0 +1,21 @@
+{
+  "name": "markdown-note-manager",
+  "version": "1.0.0",
+  "description": "Web-based Markdown note management tool",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vite --port 20253",
+    "build": "vite build",
+    "preview": "vite preview --port 20253"
+  },
+  "dependencies": {
+    "vue": "^3.3.4",
+    "marked": "^11.1.1",
+    "highlight.js": "^11.9.0",
+    "font-awesome": "^4.7.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.3.4",
+    "vite": "^4.4.9"
+  }
+}
