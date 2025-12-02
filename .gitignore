@@ -137,3 +137,24 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# 忽略构建输出
+/dist/
+/build/
+
+# 忽略依赖
+/node_modules/
+
+# 忽略编辑器配置
+.idea/
+.vscode/
+
+# 忽略环境变量
+.env
+.env.*
+
+# 忽略日志和缓存
+*.log
+*.cache
+*.tmp
+
